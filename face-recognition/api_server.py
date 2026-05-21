@@ -20,7 +20,7 @@ CORS(app)  # Enable CORS for Next.js requests
 
 # Initialize face recognition components (once at startup)
 print("[INFO] Initializing face recognition components...")
-detector = FaceDetector(backend="mediapipe")  # MediaPipe more accurate than OpenCV
+detector = FaceDetector()  # Uses configured backend, with fallback handled in FaceDetector
 aligner = FaceAligner()
 embedder = FaceEmbedder(model_name="FaceNet")
 calculator = SimilarityCalculator()

@@ -3,7 +3,7 @@ Configuration file for Face Recognition Module
 """
 
 # Face Detection Configuration
-FACE_DETECTION_BACKEND = "mediapipe"  # Options: "opencv", "mediapipe", "mtcnn"
+FACE_DETECTION_BACKEND = "opencv"  # Options: "opencv", "mediapipe", "mtcnn"
 MIN_DETECTION_CONFIDENCE = 0.7
 
 # Face Alignment Configuration

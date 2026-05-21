@@ -1,0 +1,263 @@
+import { Router } from "express";
+import { prisma } from "../../shared/prisma.js";
+import { asyncHandler, HttpError } from "../../shared/http.js";
+import { electionStatus, serializeBigInt } from "../../shared/serializers.js";
+import { requireAdmin, type AuthenticatedRequest } from "../auth/middleware.js";
+import { createChainElection, addChainCandidate } from "../blockchain/service.js";
+import { getAllElections, getElectionById, getVoteCounts } from "../elections/service.js";
+
+export const adminRouter = Router();
+
+function parseCsv(text: string) {
+  const lines = text.trim().split(/\r?\n/).filter(Boolean);
+  const headers = lines.shift()?.split(",").map((h) => h.trim()) || [];
+  return lines.map((line) => {
+    const values = line.split(",").map((value) => value.trim());
+    return Object.fromEntries(headers.map((header, index) => [header, values[index] || ""]));
+  });
+}
+
+adminRouter.get("/elections", requireAdmin, asyncHandler(async (_req, res) => {
+  const elections = await getAllElections();
+  res.json({ success: true, data: serializeBigInt(elections) });
+}));
+
+adminRouter.post("/elections", requireAdmin, asyncHandler(async (req: AuthenticatedRequest, res) => {
+  const { name, description, level, city, province, startTime, endTime, candidates } = req.body;
+  if (!name || !description || !level || !startTime || !endTime) throw new HttpError(400, "Missing required fields");
+  const start = new Date(startTime);
+  const end = new Date(endTime);
+  if (end <= start) throw new HttpError(400, "End time must be after start time");
+  const election = await prisma.election.create({
+    data: {
+      name,
+      description,
+      level,
+      city: city || null,
+      province: province || null,
+      startTime: start,
+      endTime: end,
+      createdBy: req.user!.id,
+      candidates: Array.isArray(candidates) ? {
+        create: candidates.map((candidate: any, index: number) => ({
+          name: candidate.name,
+          party: candidate.party,
+          description: candidate.description || null,
+          photoUrl: candidate.photoUrl || null,
+          orderIndex: index,
+        })),
+      } : undefined,
+    },
+    include: { candidates: true },
+  });
+  res.status(201).json({ success: true, data: serializeBigInt(election), message: "Election created successfully" });
+}));
+
+adminRouter.post("/elections/create-and-deploy", requireAdmin, asyncHandler(async (req: AuthenticatedRequest, res) => {
+  const name = req.body.name || req.body.title;
+  const start = new Date(req.body.startTime || req.body.startDate);
+  const end = new Date(req.body.endTime || req.body.endDate);
+  const candidates = Array.isArray(req.body.candidates) ? req.body.candidates : [];
+  if (!name || !req.body.description || !req.body.level || !start || !end) throw new HttpError(400, "Missing required fields");
+
+  const deployed = await createChainElection({ name, description: req.body.description, startTime: start, endTime: end });
+  const candidateChainIds = new Map<number, bigint>();
+  for (let i = 0; i < candidates.length; i += 1) {
+    const result = await addChainCandidate({
+      chainElectionId: deployed.chainElectionId,
+      name: candidates[i].name,
+      party: candidates[i].party,
+      photoUrl: candidates[i].photoUrl,
+      expectedChainCandidateId: BigInt(i + 1),
+    });
+    candidateChainIds.set(i, result.chainCandidateId);
+  }
+
+  const election = await prisma.election.create({
+    data: {
+      name,
+      description: req.body.description,
+      level: req.body.level,
+      city: req.body.city || null,
+      province: req.body.province || null,
+      startTime: start,
+      endTime: end,
+      createdBy: req.user!.id,
+      chainElectionId: deployed.chainElectionId,
+      candidates: {
+        create: candidates.map((candidate: any, index: number) => ({
+          name: candidate.name,
+          party: candidate.party,
+          description: candidate.description || null,
+          photoUrl: candidate.photoUrl || null,
+          orderIndex: index,
+          chainCandidateId: candidateChainIds.get(index) || null,
+        })),
+      },
+    },
+    include: { candidates: true },
+  });
+
+  res.json({
+    success: true,
+    data: serializeBigInt(election),
+    message: "Election created and deployed successfully!",
+    blockchain: serializeBigInt({ transactionHash: deployed.transactionHash, chainElectionId: deployed.chainElectionId, candidatesDeployed: candidates.length }),
+  });
+}));
+
+adminRouter.get("/elections/:electionId", requireAdmin, asyncHandler(async (req, res) => {
+  const election = await getElectionById(req.params.electionId);
+  if (!election) throw new HttpError(404, "Election not found");
+  const includeResults = req.query.includeResults === "true";
+  const counts = includeResults ? await getVoteCounts(req.params.electionId) : { voteCounts: {}, totalVotes: 0 };
+  res.json({
+    success: true,
+    data: serializeBigInt({
+      ...election,
+      totalVotes: counts.totalVotes,
+      candidates: election.candidates.map((candidate) => ({
+        ...candidate,
+        voteCount: counts.voteCounts[candidate.id.toString()] || 0,
+      })),
+    }),
+  });
+}));
+
+adminRouter.put("/elections/:electionId", requireAdmin, asyncHandler(async (req, res) => {
+  const election = await getElectionById(req.params.electionId);
+  if (!election) throw new HttpError(404, "Election not found");
+  if (election.deletedAt) throw new HttpError(400, "Cannot edit a deleted election");
+  if (election.chainElectionId) throw new HttpError(400, "Cannot edit election after it has been deployed to blockchain.");
+  const data = { ...req.body };
+  if (data.startTime) data.startTime = new Date(data.startTime);
+  if (data.endTime) data.endTime = new Date(data.endTime);
+  const updated = await prisma.election.update({ where: { id: BigInt(req.params.electionId) }, data, include: { candidates: true } });
+  res.json({ success: true, data: serializeBigInt(updated), message: "Election updated successfully" });
+}));
+
+adminRouter.delete("/elections/:electionId", requireAdmin, asyncHandler(async (req, res) => {
+  await prisma.election.update({ where: { id: BigInt(req.params.electionId) }, data: { deletedAt: new Date() } });
+  res.json({ success: true, message: "Election deleted successfully (soft delete)" });
+}));
+
+adminRouter.get("/elections/:electionId/candidates", requireAdmin, asyncHandler(async (req, res) => {
+  const candidates = await prisma.candidate.findMany({ where: { electionId: BigInt(req.params.electionId) }, orderBy: { orderIndex: "asc" } });
+  res.json({ success: true, data: serializeBigInt(candidates) });
+}));
+
+adminRouter.post("/elections/:electionId/candidates", requireAdmin, asyncHandler(async (req, res) => {
+  const election = await getElectionById(req.params.electionId);
+  if (!election) throw new HttpError(404, "Election not found");
+  if (electionStatus(election.startTime, election.endTime) !== "upcoming") throw new HttpError(400, "Can only add candidates before election starts");
+  const count = await prisma.candidate.count({ where: { electionId: BigInt(req.params.electionId) } });
+  const candidate = await prisma.candidate.create({
+    data: {
+      electionId: BigInt(req.params.electionId),
+      name: req.body.name,
+      party: req.body.party,
+      description: req.body.description || null,
+      photoUrl: req.body.photoUrl || null,
+      orderIndex: count,
+    },
+  });
+  res.status(201).json({ success: true, data: serializeBigInt(candidate), message: "Candidate added successfully" });
+}));
+
+adminRouter.delete("/elections/:electionId/candidates", requireAdmin, asyncHandler(async (req, res) => {
+  const candidateId = String(req.query.candidateId || "");
+  if (!candidateId) throw new HttpError(400, "Candidate ID is required");
+  await prisma.candidate.delete({ where: { id: BigInt(candidateId) } });
+  res.json({ success: true, message: "Candidate deleted successfully" });
+}));
+
+adminRouter.get("/elections/:electionId/stats", requireAdmin, asyncHandler(async (req, res) => {
+  const election = await getElectionById(req.params.electionId);
+  if (!election) throw new HttpError(404, "Election not found");
+  const { voteCounts, totalVotes } = await getVoteCounts(req.params.electionId);
+  const candidateStats = election.candidates.map((candidate) => {
+    const voteCount = voteCounts[candidate.id.toString()] || 0;
+    return {
+      id: candidate.id.toString(),
+      name: candidate.name,
+      party: candidate.party,
+      voteCount,
+      percentage: totalVotes > 0 ? ((voteCount / totalVotes) * 100).toFixed(2) : "0.00",
+    };
+  });
+  res.json({
+    success: true,
+    data: serializeBigInt({
+      electionId: election.id,
+      electionName: election.name,
+      status: electionStatus(election.startTime, election.endTime),
+      totalVotes,
+      uniqueVoters: totalVotes,
+      candidateCount: election.candidates.length,
+      candidateStats,
+      startTime: election.startTime,
+      endTime: election.endTime,
+    }),
+  });
+}));
+
+adminRouter.get("/reports/elections/:electionId", requireAdmin, asyncHandler(async (req, res) => {
+  const election = await getElectionById(req.params.electionId);
+  if (!election) throw new HttpError(404, "Election not found");
+  const votes = await prisma.vote.findMany({
+    where: { electionId: BigInt(req.params.electionId) },
+    select: { id: true, txHash: true, proofHash: true, castAt: true, userId: true },
+    orderBy: { castAt: "asc" },
+  });
+  const auditLogs = await prisma.auditLog.findMany({
+    where: { entityType: "Election", entityId: req.params.electionId },
+    orderBy: { createdAt: "asc" },
+  });
+  res.json({ success: true, data: serializeBigInt({ election, votes, auditLogs }) });
+}));
+
+adminRouter.post("/voters/import", requireAdmin, asyncHandler(async (req, res) => {
+  const csv = typeof req.body === "string" ? req.body : req.body.csv;
+  if (!csv) throw new HttpError(400, "CSV content is required in the `csv` field.");
+  const rows = parseCsv(csv);
+  const seen = new Set<string>();
+  const duplicates: string[] = [];
+  const imported: string[] = [];
+  const invalid: Array<{ row: number; reason: string }> = [];
+
+  for (const [index, row] of rows.entries()) {
+    const nik = row.nik || row.NIK;
+    if (!nik || !row.namaLengkap || !row.tanggalLahir) {
+      invalid.push({ row: index + 2, reason: "Missing nik, namaLengkap, or tanggalLahir" });
+      continue;
+    }
+    if (seen.has(nik)) {
+      duplicates.push(nik);
+      continue;
+    }
+    seen.add(nik);
+    await prisma.penduduk.upsert({
+      where: { nik },
+      update: {
+        namaLengkap: row.namaLengkap,
+        tanggalLahir: new Date(row.tanggalLahir),
+        provinsi: row.provinsi || null,
+        kabKota: row.kabKota || null,
+        kecamatan: row.kecamatan || null,
+        kelurahan: row.kelurahan || null,
+      },
+      create: {
+        nik,
+        namaLengkap: row.namaLengkap,
+        tanggalLahir: new Date(row.tanggalLahir),
+        provinsi: row.provinsi || null,
+        kabKota: row.kabKota || null,
+        kecamatan: row.kecamatan || null,
+        kelurahan: row.kelurahan || null,
+      },
+    });
+    imported.push(nik);
+  }
+
+  res.json({ success: true, data: { imported: imported.length, duplicates, invalid } });
+}));

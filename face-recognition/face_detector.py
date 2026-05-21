@@ -42,6 +42,11 @@ class FaceDetector:
     def _init_mediapipe(self):
         """Initialize MediaPipe Face Detection"""
         import mediapipe as mp
+        if not hasattr(mp, "solutions"):
+            print("[WARNING] Installed MediaPipe package does not expose mp.solutions; falling back to OpenCV.")
+            self.backend = "opencv"
+            self._init_opencv()
+            return
         self.mp_face_detection = mp.solutions.face_detection
         self.detector = self.mp_face_detection.FaceDetection(
             min_detection_confidence=config.MIN_DETECTION_CONFIDENCE
