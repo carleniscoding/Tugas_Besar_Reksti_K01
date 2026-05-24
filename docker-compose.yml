@@ -1,0 +1,69 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: votely-backend/Dockerfile
+    container_name: votely-backend
+    env_file:
+      - .env
+    environment:
+      PORT: 4000
+      NODE_ENV: development
+      PYTHON_API_URL: http://face-recognition:5000
+      CORS_ORIGIN: http://localhost:3000,http://localhost:5173,http://web:3000,http://mobile:5173
+    ports:
+      - "4000:4000"
+    depends_on:
+      face-recognition:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: votely-web/Dockerfile
+    container_name: votely-web
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: development
+      VOTELY_BACKEND_URL: http://backend:4000
+      PYTHON_API_URL: http://face-recognition:5000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  mobile:
+    build:
+      context: .
+      dockerfile: Dockerfile.mobile
+    container_name: votely-mobile
+    environment:
+      VITE_API_BASE_URL: http://localhost:4000
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  face-recognition:
+    build:
+      context: ./face-recognition
+      dockerfile: Dockerfile
+    container_name: face-recognition-api
+    environment:
+      PORT: 5000
+      FLASK_DEBUG: "false"
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./face-recognition/data:/app/data:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
