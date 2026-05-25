@@ -113,7 +113,8 @@ function RegisterPage() {
     setLoading(true)
     setError('')
     try {
-      const embeddingResponse = await generateEmbedding(image)
+      const registrationImage = Array.isArray(image) ? image[0] : image
+      const embeddingResponse = await generateEmbedding(registrationImage)
       if (!embeddingResponse?.embedding) {
         throw new Error(embeddingResponse?.error || 'Gagal memproses wajah.')
       }

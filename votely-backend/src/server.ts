@@ -1,7 +1,9 @@
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import express from "express";
+import swaggerUi from "swagger-ui-express";
 import { env } from "./config/env.js";
+import { openApiDocument } from "./docs/openapi.js";
 import { errorHandler, notFoundHandler } from "./shared/http.js";
 import { adminRouter } from "./modules/admin/routes.js";
 import { authRouter } from "./modules/auth/routes.js";
@@ -18,6 +20,19 @@ export function createApp() {
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ extended: true }));
   app.use(cookieParser());
+
+  app.get("/openapi.json", (_req, res) => {
+    res.json(openApiDocument);
+  });
+
+  app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(openApiDocument, {
+    customSiteTitle: "Votely API Docs",
+    swaggerOptions: {
+      persistAuthorization: true,
+      displayRequestDuration: true,
+      docExpansion: "none",
+    },
+  }));
 
   app.get("/health", (_req, res) => {
     res.json({
