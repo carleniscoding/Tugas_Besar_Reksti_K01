@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { mkdir, writeFile } from 'node:fs/promises'
+import path from 'node:path'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -14,6 +16,20 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
     persistSession: false
   }
 })
+
+const extensionByType: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/jpg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+}
+
+async function saveLocalCandidatePhoto(buffer: Buffer, filename: string) {
+  const uploadDir = path.join(process.cwd(), 'public', 'uploads', 'candidates')
+  await mkdir(uploadDir, { recursive: true })
+  await writeFile(path.join(uploadDir, filename), buffer)
+  return `/uploads/candidates/${filename}`
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -48,7 +64,7 @@ export async function POST(req: NextRequest) {
     // Generate unique filename
     const timestamp = Date.now()
     const randomStr = Math.random().toString(36).substring(2, 9)
-    const ext = file.name.split('.').pop()
+    const ext = extensionByType[file.type] || file.name.split('.').pop() || 'jpg'
     const filename = `${timestamp}-${randomStr}.${ext}`
     const path = `candidates/${filename}`
 
@@ -56,39 +72,49 @@ export async function POST(req: NextRequest) {
     const arrayBuffer = await file.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
 
-    // Upload to Supabase Storage using admin client (bypasses RLS)
-    const { data, error } = await supabaseAdmin.storage
-      .from('fotoKandidat')
-      .upload(path, buffer, {
-        cacheControl: '3600',
-        upsert: false,
-        contentType: file.type
-      })
+    if (supabaseServiceKey) {
+      try {
+        const { data, error } = await supabaseAdmin.storage
+          .from('fotoKandidat')
+          .upload(path, buffer, {
+            cacheControl: '3600',
+            upsert: false,
+            contentType: file.type
+          })
 
-    if (error) {
-      console.error('Supabase upload error:', error)
-      return NextResponse.json(
-        { success: false, error: `Upload failed: ${error.message}` },
-        { status: 500 }
-      )
+        if (!error) {
+          const { data: urlData } = supabaseAdmin.storage
+            .from('fotoKandidat')
+            .getPublicUrl(data.path)
+
+          return NextResponse.json({
+            success: true,
+            data: {
+              url: urlData.publicUrl,
+              path: data.path
+            }
+          })
+        }
+
+        console.error('Supabase upload error:', error)
+      } catch (error) {
+        console.error('Supabase upload failed, falling back to local storage:', error)
+      }
     }
 
-    // Get public URL
-    const { data: urlData } = supabaseAdmin.storage
-      .from('fotoKandidat')
-      .getPublicUrl(data.path)
+    const localUrl = await saveLocalCandidatePhoto(buffer, filename)
 
     return NextResponse.json({
       success: true,
       data: {
-        url: urlData.publicUrl,
-        path: data.path
+        url: localUrl,
+        path: localUrl
       }
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Upload error:', error)
     return NextResponse.json(
-      { success: false, error: error.message || 'Failed to upload file' },
+      { success: false, error: error instanceof Error ? error.message : 'Failed to upload file' },
       { status: 500 }
     )
   }

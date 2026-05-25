@@ -3,9 +3,8 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
-import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/badge'
-import { ArrowRight, Plus, BarChart3, Calendar, Users, Upload } from 'lucide-react'
+import { ArrowRight, Plus, BarChart3, Calendar, Users } from 'lucide-react'
 
 type Election = {
   id: string
@@ -17,7 +16,7 @@ type Election = {
   startTime: string
   endTime: string
   chainElectionId: bigint | null
-  candidates: any[]
+  candidates: unknown[]
   _count?: {
     votes: number
   }
@@ -140,13 +139,6 @@ export default function AdminDashboard() {
 
       {/* Admin Actions */}
       <div className="flex flex-col justify-end gap-3 sm:flex-row">
-        <Link
-          href="/admin/voters/import"
-          className="inline-flex items-center justify-center gap-2 px-4 py-2 border border-[#DDE6F4] bg-white hover:bg-[#F8FAFD] text-[#3A3F52] rounded-xl text-sm font-medium transition-all"
-        >
-          <Upload className="w-4 h-4" />
-          Import Data Pemilih
-        </Link>
         <Link 
           href="/admin/elections/new"
           className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#1FD7BE] to-[#17c5ae] hover:from-[#17c5ae] hover:to-[#0fa89a] text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-[#1FD7BE]/25 hover:shadow-[#1FD7BE]/40"

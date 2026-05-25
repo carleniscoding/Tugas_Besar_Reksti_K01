@@ -7,7 +7,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/Button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { LogOut, Home, User, Shield, ChevronDown, Settings, Upload } from 'lucide-react'
+import { LogOut, Home, User, Shield, ChevronDown, Settings } from 'lucide-react'
 
 function getInitials(name?: string) {
   if (!name) return 'US'
@@ -120,17 +120,6 @@ export function Navbar({ isAdmin = false }: { isAdmin?: boolean }) {
                   <Settings className="w-4 h-4 mr-2" />
                   Kelola Pemilihan
                 </button>
-                <Link
-                  href="/admin/voters/import"
-                  className={`h-9 px-4 text-sm font-medium rounded-lg transition-all duration-200 flex items-center ${
-                    pathname === '/admin/voters/import'
-                      ? 'bg-[#1FD7BE]/10 text-[#1FD7BE]'
-                      : 'text-[#9AA3B8] hover:text-[#3A3F52] hover:bg-[#DDE6F4]/50'
-                  }`}
-                >
-                  <Upload className="w-4 h-4 mr-2" />
-                  Data Pemilih
-                </Link>
               </>
             )}
           </div>

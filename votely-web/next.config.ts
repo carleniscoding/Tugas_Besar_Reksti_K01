@@ -12,7 +12,7 @@ const nextConfig: NextConfig = {
   async rewrites() {
     const backendUrl = process.env.VOTELY_BACKEND_URL || "http://localhost:4000";
     return {
-      beforeFiles: [
+      afterFiles: [
         {
           source: "/api/:path*",
           destination: `${backendUrl}/api/:path*`,
