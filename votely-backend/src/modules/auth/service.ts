@@ -4,6 +4,7 @@ import { env } from "../../config/env.js";
 import { prisma, Role, type Penduduk, type User } from "../../shared/prisma.js";
 import { HttpError } from "../../shared/http.js";
 import { generateWallet } from "../wallet/service.js";
+import { verifyFace } from "../identity/service.js";
 
 type PendudukInput = Omit<Penduduk, "id" | "createdAt" | "updatedAt" | "foto" | "alamat">;
 
@@ -27,6 +28,9 @@ export async function getUserByNik(nik: string) {
 export async function loginVoterAccount(nik: string, password: string) {
   const user = await getUserByNik(nik);
   if (!user) throw new HttpError(401, "Kombinasi NIK atau password salah.");
+  if (user.role !== Role.ADMIN) {
+    throw new HttpError(403, "Login password hanya tersedia untuk admin web.");
+  }
 
   const isPasswordValid = await bcrypt.compare(password, user.password);
   if (!isPasswordValid) throw new HttpError(401, "Kombinasi NIK atau password salah.");
@@ -34,6 +38,43 @@ export async function loginVoterAccount(nik: string, password: string) {
   const token = signAuthToken(user, nik);
   return {
     token,
+    user: {
+      id: user.id,
+      role: user.role,
+      walletAddress: user.walletAddress,
+    },
+  };
+}
+
+export async function faceLoginVoterAccount(nik: string, image?: string) {
+  if (!nik) throw new HttpError(400, "NIK wajib diisi.");
+
+  const penduduk = await prisma.penduduk.findUnique({
+    where: { nik },
+    include: { user: true },
+  });
+  const user = penduduk?.user;
+  if (!penduduk || !user || user.role !== Role.WARGA) {
+    throw new HttpError(401, "NIK belum terdaftar sebagai peserta pemilu.");
+  }
+
+  const participantCount = await prisma.electionParticipant.count({
+    where: { userId: user.id, election: { deletedAt: null } },
+  });
+  if (participantCount === 0) {
+    throw new HttpError(403, "NIK belum didaftarkan sebagai peserta election mana pun.");
+  }
+
+  if (!env.faceBypassEnabled) {
+    if (!image) throw new HttpError(400, "Foto wajah wajib dikirim.");
+    const result = await verifyFace({ nik, image });
+    if (!result.verified) throw new HttpError(401, result.message || "Verifikasi wajah gagal.");
+  }
+
+  const token = signAuthToken(user, nik);
+  return {
+    token,
+    bypassed: env.faceBypassEnabled,
     user: {
       id: user.id,
       role: user.role,

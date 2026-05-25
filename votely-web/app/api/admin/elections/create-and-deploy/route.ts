@@ -6,6 +6,7 @@ import { getContract, prepareContractCall, sendTransaction, readContract } from 
 import { privateKeyToAccount } from "thirdweb/wallets";
 import { createThirdwebClient } from "thirdweb";
 import { defineChain } from "thirdweb/chains";
+import { importElectionParticipants, parseVoterCsv } from '@/lib/voterCsv';
 
 const client = createThirdwebClient({
   clientId: process.env.NEXT_PUBLIC_THIRDWEB_CLIENT_ID || "",
@@ -55,6 +56,7 @@ export async function POST(request: NextRequest) {
     const startTime = body.startTime || body.startDate;
     const endTime = body.endTime || body.endDate;
     const candidates = body.candidates;
+    const voterCsv = typeof body.voterCsv === 'string' ? body.voterCsv : '';
 
     // Validate required fields
     if (!name || !description || !level || !startTime || !endTime) {
@@ -78,6 +80,25 @@ export async function POST(request: NextRequest) {
     if (end <= start) {
       return NextResponse.json(
         { success: false, error: 'End time must be after start time' },
+        { status: 400 }
+      );
+    }
+
+    const voterImport = voterCsv.trim() ? parseVoterCsv(voterCsv) : null;
+    if (voterImport && voterImport.valid.length === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Spreadsheet pemilih tidak memiliki data valid.',
+          voterImport: {
+            totalRows: voterImport.totalRows,
+            imported: 0,
+            created: 0,
+            updated: 0,
+            invalid: voterImport.invalid,
+            duplicates: voterImport.duplicates,
+          },
+        },
         { status: 400 }
       );
     }
@@ -191,6 +212,8 @@ export async function POST(request: NextRequest) {
     console.log('Step 3: Creating election in database...');
     
     const election = await prisma.$transaction(async (tx: any) => {
+      let voterImportSummary = null;
+
       // Create election
       const newElection = await tx.election.create({
         data: {
@@ -205,6 +228,10 @@ export async function POST(request: NextRequest) {
           chainElectionId: chainElectionId,
         }
       });
+
+      if (voterImport) {
+        voterImportSummary = await importElectionParticipants(tx, newElection.id, voterImport);
+      }
 
       // Create candidates if provided
       if (candidates && Array.isArray(candidates) && candidates.length > 0) {
@@ -227,20 +254,22 @@ export async function POST(request: NextRequest) {
       }
 
       // Return election with candidates
-      return tx.election.findUnique({
+      const createdElection = await tx.election.findUnique({
         where: { id: newElection.id },
         include: { candidates: true }
       });
+
+      return { election: createdElection, voterImportSummary };
     });
 
-    console.log('Election created successfully in database:', election?.id.toString());
+    console.log('Election created successfully in database:', election.election?.id.toString());
 
     // Serialize response
     const serializedElection = {
-      ...election,
-      id: election!.id.toString(),
-      chainElectionId: election!.chainElectionId?.toString() || null,
-      candidates: election!.candidates.map((c: any) => ({
+      ...election.election,
+      id: election.election!.id.toString(),
+      chainElectionId: election.election!.chainElectionId?.toString() || null,
+      candidates: election.election!.candidates.map((c: any) => ({
         ...c,
         id: c.id.toString(),
         electionId: c.electionId.toString(),
@@ -256,7 +285,8 @@ export async function POST(request: NextRequest) {
         transactionHash: receipt.transactionHash,
         chainElectionId: chainElectionId.toString(),
         candidatesDeployed: candidates?.length || 0
-      }
+      },
+      voterImport: election.voterImportSummary
     });
 
   } catch (error: any) {

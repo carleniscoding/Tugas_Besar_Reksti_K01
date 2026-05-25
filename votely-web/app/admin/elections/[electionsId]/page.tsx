@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
@@ -82,6 +82,7 @@ function formatDate(dateString: string): string {
 
 export default function AdminElectionDetailPage({ params }: { params: Promise<{ electionsId: string }> }) {
   const router = useRouter()
+  const voterCsvInputRef = useRef<HTMLInputElement | null>(null)
   const [electionId, setElectionId] = useState('')
   const [election, setElection] = useState<Election | null>(null)
   const [loading, setLoading] = useState(true)
@@ -97,6 +98,8 @@ export default function AdminElectionDetailPage({ params }: { params: Promise<{ 
   const [submitting, setSubmitting] = useState(false)
   const [deploying, setDeploying] = useState(false)
   const [deployingCandidates, setDeployingCandidates] = useState(false)
+  const [importingVoters, setImportingVoters] = useState(false)
+  const [voterImportResult, setVoterImportResult] = useState<any>(null)
   const [refreshingResults, setRefreshingResults] = useState(false)
   const [showEditElection, setShowEditElection] = useState(false)
   const [editForm, setEditForm] = useState({
@@ -276,6 +279,40 @@ export default function AdminElectionDetailPage({ params }: { params: Promise<{ 
     } catch (err) {
       alert('Failed to delete election')
       console.error('Error deleting election:', err)
+    }
+  }
+
+  const handleImportVoters = async (file?: File) => {
+    if (!file || !electionId) return
+
+    const isCsv = file.name.toLowerCase().endsWith('.csv') || file.type.includes('csv')
+    if (!isCsv) {
+      alert('File peserta harus berformat CSV')
+      return
+    }
+
+    setImportingVoters(true)
+    setVoterImportResult(null)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('electionId', electionId)
+
+      const response = await fetch('/api/admin/voters/import', {
+        method: 'POST',
+        body: formData,
+      })
+      const data = await response.json()
+      setVoterImportResult(data.data || null)
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Import peserta gagal')
+      }
+      fetchElection(electionId)
+    } catch (err: any) {
+      alert(err.message || 'Import peserta gagal')
+    } finally {
+      setImportingVoters(false)
+      if (voterCsvInputRef.current) voterCsvInputRef.current.value = ''
     }
   }
 
@@ -606,6 +643,55 @@ export default function AdminElectionDetailPage({ params }: { params: Promise<{ 
             <p className="text-sm text-muted-foreground">Voting Period</p>
             <p className="text-foreground mt-1">{formatDate(election.startTime)} - {formatDate(election.endTime)}</p>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="border-b border-border">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Peserta Pemilu</CardTitle>
+              <CardDescription>Import CSV peserta khusus election ini. Kolom wajib: nik, faceEmbedding.</CardDescription>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              onClick={() => voterCsvInputRef.current?.click()}
+              disabled={importingVoters || isDeleted}
+            >
+              {importingVoters ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+              Import CSV
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-6 space-y-4">
+          <input
+            ref={voterCsvInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={(event) => handleImportVoters(event.target.files?.[0])}
+          />
+          <div className="rounded-lg border border-dashed border-border bg-muted/30 p-4 text-sm text-muted-foreground">
+            Format CSV: <span className="font-mono text-foreground">nik,faceEmbedding</span>. faceEmbedding harus berupa JSON array angka yang diberi tanda kutip.
+          </div>
+          {voterImportResult && (
+            <div className="grid gap-3 sm:grid-cols-4">
+              {[
+                ['Total Baris', voterImportResult.totalRows],
+                ['Diimport', voterImportResult.imported],
+                ['Peserta', voterImportResult.participants],
+                ['Dilewati', (voterImportResult.invalid?.length || 0) + (voterImportResult.duplicates?.length || 0)],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-lg border border-border bg-background p-3">
+                  <p className="text-xs text-muted-foreground">{label}</p>
+                  <p className="text-xl font-bold text-foreground">{value}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 

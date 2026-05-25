@@ -105,32 +105,12 @@ export async function getElectionsByCity(city: string, province: string) {
  * Get elections for a specific user based on their location (excluding soft deleted)
  */
 export async function getElectionsForUser(userId: string) {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    include: {
-      penduduk: true
-    }
-  });
-
-  if (!user || !user.penduduk) {
-    throw new Error('User or citizen data not found');
-  }
-
   return await prisma.election.findMany({
     where: {
       deletedAt: null,
-      OR: [
-        { level: 'NASIONAL' },
-        { 
-          level: 'PROVINSI',
-          province: user.penduduk.provinsi
-        },
-        {
-          level: 'KOTA',
-          city: user.penduduk.kabKota,
-          province: user.penduduk.provinsi
-        }
-      ]
+      participants: {
+        some: { userId }
+      }
     },
     include: {
       candidates: true

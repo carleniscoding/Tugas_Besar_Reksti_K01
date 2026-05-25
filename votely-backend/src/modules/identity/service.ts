@@ -21,6 +21,27 @@ async function callPython(path: string, body: unknown): Promise<any> {
   return data;
 }
 
+async function ensureParticipant(userId: string, electionId: string) {
+  const participant = await prisma.electionParticipant.findUnique({
+    where: { electionId_userId: { electionId: BigInt(electionId), userId } },
+    select: { id: true },
+  });
+  if (!participant) throw new HttpError(403, "Anda tidak terdaftar sebagai peserta pemilu ini.");
+}
+
+async function createVoteToken(userId: string, electionId: string) {
+  const voteToken = crypto.randomBytes(32).toString("base64url");
+  await prisma.voteToken.create({
+    data: {
+      userId,
+      electionId: BigInt(electionId),
+      tokenHash: hashToken(voteToken),
+      expiresAt: new Date(Date.now() + VOTE_TOKEN_TTL_SECONDS * 1000),
+    },
+  });
+  return voteToken;
+}
+
 export async function generateEmbedding(image: string) {
   if (!image) throw new HttpError(400, "Image data is required");
   return callPython("/generate-embedding", { image });
@@ -46,7 +67,6 @@ export async function registerFace(nik: string, image: string) {
 }
 
 export async function verifyFace(params: { image: string; nik?: string; userId?: string; electionId?: string }) {
-  if (!params.image) throw new HttpError(400, "Image data is required");
   let userNik = params.nik;
   if (!userNik && params.userId) {
     const user = await prisma.user.findUnique({ where: { id: params.userId }, include: { penduduk: { select: { nik: true } } } });
@@ -59,6 +79,31 @@ export async function verifyFace(params: { image: string; nik?: string; userId?:
     select: { foto: true, namaLengkap: true, user: { select: { id: true } } },
   });
   if (!penduduk) throw new HttpError(404, "User not found");
+
+  if (params.electionId && penduduk.user?.id) {
+    await ensureParticipant(penduduk.user.id, params.electionId);
+  }
+
+  if (env.faceBypassEnabled) {
+    const voteToken = params.electionId && penduduk.user?.id
+      ? await createVoteToken(penduduk.user.id, params.electionId)
+      : undefined;
+
+    return {
+      similarity: 1,
+      message: "Success (face bypass aktif)",
+      face_detected: true,
+      face_location: null,
+      user_name: penduduk.namaLengkap,
+      verified: true,
+      bypassed: true,
+      voteToken,
+      expiresIn: voteToken ? VOTE_TOKEN_TTL_SECONDS : undefined,
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  if (!params.image) throw new HttpError(400, "Image data is required");
   const referenceEmbedding = (penduduk.foto as any)?.embedding_vector;
   if (!referenceEmbedding || !Array.isArray(referenceEmbedding)) {
     throw new HttpError(404, "No face embedding found for this user. Please register your face first.");
@@ -69,15 +114,7 @@ export async function verifyFace(params: { image: string; nik?: string; userId?:
   let voteToken: string | undefined;
 
   if (verified && params.electionId && penduduk.user?.id) {
-    voteToken = crypto.randomBytes(32).toString("base64url");
-    await prisma.voteToken.create({
-      data: {
-        userId: penduduk.user.id,
-        electionId: BigInt(params.electionId),
-        tokenHash: hashToken(voteToken),
-        expiresAt: new Date(Date.now() + VOTE_TOKEN_TTL_SECONDS * 1000),
-      },
-    });
+    voteToken = await createVoteToken(penduduk.user.id, params.electionId);
   }
 
   return {

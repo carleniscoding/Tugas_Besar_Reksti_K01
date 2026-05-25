@@ -2,7 +2,7 @@ import { Router } from "express";
 import { requireAuth, type AuthenticatedRequest } from "../auth/middleware.js";
 import { asyncHandler, HttpError } from "../../shared/http.js";
 import { serializeBigInt } from "../../shared/serializers.js";
-import { getAllElections, getElectionById, getElectionsForUser, getVoteCounts } from "./service.js";
+import { getAllElections, getElectionById, getElectionByIdForUser, getElectionsForUser, getVoteCounts } from "./service.js";
 
 export const electionsRouter = Router();
 
@@ -17,9 +17,9 @@ electionsRouter.get("/", asyncHandler(async (req: AuthenticatedRequest, res) => 
   res.json({ success: true, data: serializeBigInt(elections) });
 }));
 
-electionsRouter.get("/:electionId", asyncHandler(async (req, res) => {
-  const election = await getElectionById(req.params.electionId);
-  if (!election) throw new HttpError(404, "Pemilu tidak ditemukan");
+electionsRouter.get("/:electionId", requireAuth, asyncHandler(async (req: AuthenticatedRequest, res) => {
+  const election = await getElectionByIdForUser(req.params.electionId, req.user!.id);
+  if (!election) throw new HttpError(404, "Pemilu tidak ditemukan atau Anda bukan peserta");
   const includeResults = req.query.includeResults === "true";
   const counts: { voteCounts: Record<string, number>; totalVotes?: number } = includeResults
     ? await getVoteCounts(req.params.electionId)

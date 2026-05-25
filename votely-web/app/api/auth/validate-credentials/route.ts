@@ -46,6 +46,13 @@ export async function POST(request: Request) {
       );
     }
 
+    if (penduduk.user.role !== "ADMIN") {
+      return NextResponse.json(
+        { error: "Akun pemilih hanya dapat digunakan di aplikasi mobile." },
+        { status: 403 }
+      );
+    }
+
     // Check if user has face registered
     const fotoData = penduduk.foto as any;
     const hasFaceRegistered = !!(fotoData?.embedding_vector && Array.isArray(fotoData.embedding_vector));
@@ -55,6 +62,7 @@ export async function POST(request: Request) {
       message: "Credentials valid",
       hasFaceRegistered,
       userName: penduduk.namaLengkap,
+      role: penduduk.user.role,
     });
 
   } catch (error: any) {

@@ -86,6 +86,10 @@ export default function VotingPage() {
         
         if (userData.success && userData.data) {
           setCurrentUser(userData.data)
+          if (userData.data.role === 'ADMIN') {
+            router.push('/admin')
+            return
+          }
         } else {
           router.push('/auth/login')
           return

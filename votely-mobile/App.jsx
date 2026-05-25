@@ -2,12 +2,9 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import './App.css'
 import LoginPage from './components/loginPage.jsx'
-import RegisterPage from './components/registerPage.jsx'
 import DashboardPage from './components/dashboardPage.jsx'
 import ElectionDetailPage from './components/electionDetailPage.jsx'
 import VotePage from './components/votePage.jsx'
-import AdminDashboardPage from './components/adminDashboardPage.jsx'
-import AdminCreateElectionPage from './components/adminCreateElectionPage.jsx'
 import { getMe, getStoredToken, logout as apiLogout } from './lib/api.js'
 
 const AuthContext = createContext(null)
@@ -73,16 +70,6 @@ function RequireAuth({ children }) {
   return children
 }
 
-function RequireAdmin({ children }) {
-  const { user, loading } = useAuth()
-  const location = useLocation()
-
-  if (loading) return <SplashScreen />
-  if (!user) return <Navigate to='/auth/login' replace state={{ from: location.pathname }} />
-  if (user?.role !== 'ADMIN') return <Navigate to='/dashboard' replace />
-  return children
-}
-
 function RootRedirect() {
   const { user, loading } = useAuth()
   if (loading) return <SplashScreen />
@@ -95,7 +82,6 @@ function App() {
       <Routes>
         <Route path='/' element={<RootRedirect />} />
         <Route path='/auth/login' element={<LoginPage />} />
-        <Route path='/auth/register' element={<RegisterPage />} />
         <Route
           path='/dashboard'
           element={
@@ -118,22 +104,6 @@ function App() {
             <RequireAuth>
               <VotePage />
             </RequireAuth>
-          }
-        />
-        <Route
-          path='/admin'
-          element={
-            <RequireAdmin>
-              <AdminDashboardPage />
-            </RequireAdmin>
-          }
-        />
-        <Route
-          path='/admin/elections/new'
-          element={
-            <RequireAdmin>
-              <AdminCreateElectionPage />
-            </RequireAdmin>
           }
         />
         <Route path='*' element={<Navigate to='/' replace />} />

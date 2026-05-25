@@ -3,8 +3,12 @@ import { prisma, type Prisma } from "../../shared/prisma.js";
 import { HttpError } from "../../shared/http.js";
 import { castVoteForVoter } from "../blockchain/service.js";
 import { hashVoteToken } from "../identity/service.js";
+import { ensureElectionParticipant } from "../elections/service.js";
 
 export async function checkVote(userId: string, electionId: string) {
+  const participant = await ensureElectionParticipant(userId, electionId);
+  if (!participant) throw new HttpError(403, "Anda tidak terdaftar sebagai peserta pemilu ini.");
+
   const vote = await prisma.vote.findUnique({
     where: { userId_electionId: { userId, electionId: BigInt(electionId) } },
     include: { candidate: true },
@@ -37,6 +41,9 @@ export async function castVote(params: {
   sourceIp?: string;
   userAgent?: string;
 }) {
+  const participant = await ensureElectionParticipant(params.userId, params.electionId);
+  if (!participant) throw new HttpError(403, "Anda tidak terdaftar sebagai peserta pemilu ini.");
+
   const election = await prisma.election.findUnique({
     where: { id: BigInt(params.electionId) },
     include: { candidates: true },

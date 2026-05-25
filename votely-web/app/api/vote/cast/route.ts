@@ -43,6 +43,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (user.role === 'ADMIN') {
+      return NextResponse.json(
+        { success: false, error: 'Administrator tidak dapat melakukan voting.' },
+        { status: 403 }
+      );
+    }
+
     console.log('[VoteCast] User attempting to vote:', user.id);
 
     const body = await request.json();

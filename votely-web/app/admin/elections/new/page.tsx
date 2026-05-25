@@ -40,9 +40,14 @@ export default function CreateElectionPage() {
       }
 
       const electionId = result.data.id
+      const voterImport = result.voterImport
 
       setProgress('')
-      setSuccess(`Election created and deployed successfully! Tx: ${result.blockchain?.transactionHash?.slice(0, 10)}...`)
+      setSuccess(
+        voterImport
+          ? `Election created and deployed successfully! ${voterImport.imported} data pemilih diimport. Tx: ${result.blockchain?.transactionHash?.slice(0, 10)}...`
+          : `Election created and deployed successfully! Tx: ${result.blockchain?.transactionHash?.slice(0, 10)}...`
+      )
       
       // Redirect to the newly created election's detail page
       setTimeout(() => {

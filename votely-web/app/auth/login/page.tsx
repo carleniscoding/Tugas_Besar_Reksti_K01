@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -120,14 +119,11 @@ export default function LoginPage() {
         setIsConnectingWallet(false)
       }
 
-      // Check user role and redirect accordingly
-      if (data.data?.role === "ADMIN") {
-        router.push('/admin')
-        router.refresh()
-        return
+      if (data.data?.role !== "ADMIN") {
+        throw new Error('Akun pemilih hanya dapat digunakan di aplikasi mobile.')
       }
 
-      router.push('/dashboard')
+      router.push('/admin')
       router.refresh()
     } catch (err) {
       console.error(err);
@@ -207,7 +203,7 @@ export default function LoginPage() {
             Selamat Datang
           </h1>
           <p className="text-[#9AA3B8]">
-            Masuk ke akun Votely Anda untuk mulai voting
+            Masuk ke panel administrator Votely
           </p>
         </div>
 
@@ -292,33 +288,17 @@ export default function LoginPage() {
             </form>
           </div>
 
-          {/* Divider */}
-          <div className="px-6 sm:px-8">
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-[#DDE6F4]"></div>
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-white/70 px-4 text-[#9AA3B8]">Belum punya akun?</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Register Link */}
-          <div className="p-6 sm:p-8 pt-4">
-            <Link 
-              href="/auth/register"
-              className="block w-full h-12 border-2 border-[#DDE6F4] hover:border-[#1FD7BE] hover:bg-[#1FD7BE]/5 text-[#3A3F52] font-medium rounded-xl transition-all duration-300 text-center leading-[44px]"
-            >
-              Daftar Sebagai Pemilih Baru
-            </Link>
+          <div className="border-t border-[#DDE6F4] px-6 py-4 sm:px-8">
+            <p className="text-center text-xs text-[#9AA3B8]">
+              Akun pemilih digunakan melalui aplikasi mobile.
+            </p>
           </div>
         </div>
 
         {/* Security Notice */}
         <div className="flex items-center justify-center gap-2 text-xs text-[#9AA3B8]">
           <Shield className="w-3.5 h-3.5" />
-          <span>Dilindungi oleh enkripsi end-to-end & blockchain verification</span>
+          <span>Panel administrasi khusus pengelola election</span>
         </div>
       </div>
     </>

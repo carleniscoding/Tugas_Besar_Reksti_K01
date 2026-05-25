@@ -14,17 +14,19 @@ export function clearStoredToken() {
 
 export async function apiFetch(path, options = {}) {
   const token = getStoredToken()
+  const includeAuth = options.auth !== false
   const headers = {
     'Content-Type': 'application/json',
     ...(options.headers || {}),
   }
 
-  if (token) {
+  if (includeAuth && token) {
     headers.Authorization = `Bearer ${token}`
   }
 
+  const { auth, ...fetchOptions } = options
   const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
+    ...fetchOptions,
     headers,
     credentials: 'include',
   })
@@ -45,6 +47,16 @@ export async function login(nik, password) {
   return data
 }
 
+export async function faceLogin(nik, image) {
+  const data = await apiFetch('/api/auth/face-login', {
+    method: 'POST',
+    auth: false,
+    body: JSON.stringify({ nik, image }),
+  })
+  if (data?.token) setStoredToken(data.token)
+  return data
+}
+
 export async function logout() {
   try {
     await apiFetch('/api/auth/logout', { method: 'POST' })
@@ -60,6 +72,7 @@ export async function getMe() {
 export async function validateCredentials(nik, password) {
   return apiFetch('/api/auth/validate-credentials', {
     method: 'POST',
+    auth: false,
     body: JSON.stringify({ nik, password }),
   })
 }
@@ -81,6 +94,7 @@ export async function generateEmbedding(image) {
 export async function verifyFace(image, { nik, electionId } = {}) {
   return apiFetch('/api/face-verify', {
     method: 'POST',
+    auth: !nik,
     body: JSON.stringify({ image, nik, electionId }),
   })
 }

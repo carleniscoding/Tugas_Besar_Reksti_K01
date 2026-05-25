@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { Plus, Trash2, Upload, X } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { FileText, Plus, Trash2, Upload, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -33,6 +33,8 @@ export type ElectionFormData = {
   startTime: string
   endTime: string
   candidates: CandidateFormData[]
+  voterCsv?: string
+  voterCsvFileName?: string
 }
 
 const PROVINCES = [
@@ -53,6 +55,7 @@ const PROVINCES = [
 ]
 
 export default function ElectionForm({ onSubmit, initialData, submitLabel = 'Create Election' }: ElectionFormProps) {
+  const voterCsvInputRef = useRef<HTMLInputElement | null>(null)
   const [formData, setFormData] = useState<ElectionFormData>({
     name: initialData?.name || '',
     description: initialData?.description || '',
@@ -62,6 +65,8 @@ export default function ElectionForm({ onSubmit, initialData, submitLabel = 'Cre
     startTime: initialData?.startTime || '',
     endTime: initialData?.endTime || '',
     candidates: initialData?.candidates || [],
+    voterCsv: initialData?.voterCsv || '',
+    voterCsvFileName: initialData?.voterCsvFileName || '',
   })
   
   const [loading, setLoading] = useState(false)
@@ -130,6 +135,28 @@ export default function ElectionForm({ onSubmit, initialData, submitLabel = 'Cre
         i === index ? { ...c, photoUrl: '' } : c
       )
     }))
+  }
+
+  const handleVoterCsvUpload = async (file: File) => {
+    const isCsv = file.name.toLowerCase().endsWith('.csv') || file.type.includes('csv')
+    if (!isCsv) {
+      setError('Spreadsheet pemilih harus berformat CSV')
+      return
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      setError('Ukuran spreadsheet pemilih maksimal 2 MB')
+      return
+    }
+
+    const text = await file.text()
+    setFormData(prev => ({ ...prev, voterCsv: text, voterCsvFileName: file.name }))
+    setError('')
+  }
+
+  const removeVoterCsv = () => {
+    setFormData(prev => ({ ...prev, voterCsv: '', voterCsvFileName: '' }))
+    if (voterCsvInputRef.current) voterCsvInputRef.current.value = ''
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -401,6 +428,58 @@ export default function ElectionForm({ onSubmit, initialData, submitLabel = 'Cre
               />
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Spreadsheet Pemilih</CardTitle>
+          <CardDescription>Opsional. Upload CSV peserta untuk election ini.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <input
+            ref={voterCsvInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0]
+              if (file) handleVoterCsvUpload(file)
+            }}
+          />
+
+          {formData.voterCsvFileName ? (
+            <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-background p-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <FileText className="h-5 w-5 shrink-0 text-[#1FD7BE]" />
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-foreground">{formData.voterCsvFileName}</p>
+                  <p className="text-xs text-muted-foreground">Akan divalidasi dan dijadikan peserta saat election dibuat.</p>
+                </div>
+              </div>
+              <Button type="button" variant="ghost" size="icon-sm" onClick={removeVoterCsv}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => voterCsvInputRef.current?.click()}
+              onDrop={(event) => {
+                event.preventDefault()
+                const file = event.dataTransfer.files[0]
+                if (file) handleVoterCsvUpload(file)
+              }}
+              onDragOver={(event) => event.preventDefault()}
+              className="flex min-h-32 w-full flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-muted/30 px-6 py-6 text-center transition-colors hover:border-[#1FD7BE] hover:bg-[#1FD7BE]/5"
+            >
+              <Upload className="h-5 w-5 text-[#1FD7BE]" />
+              <div>
+                <p className="text-sm font-medium text-foreground">Upload CSV pemilih</p>
+                <p className="text-xs text-muted-foreground">Kolom: nik, faceEmbedding</p>
+              </div>
+            </button>
+          )}
         </CardContent>
       </Card>
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { getElectionsForUser } from '../lib/api'
 import { useAuth } from '../App.jsx'
 
@@ -42,7 +42,6 @@ function StatusBadge({ status }) {
 
 function DashboardPage() {
   const { user, signOut } = useAuth()
-  const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [elections, setElections] = useState([])
@@ -90,14 +89,6 @@ function DashboardPage() {
         <div className='space-y-3'>
           <div className='flex items-center justify-between'>
             <h2 className='text-lg font-semibold text-slate-800'>Pemilu Tersedia</h2>
-            {user?.role === 'ADMIN' && (
-              <button
-                onClick={() => navigate('/admin')}
-                className='text-xs font-semibold text-teal-600'
-              >
-                Admin
-              </button>
-            )}
           </div>
 
           {loading ? (

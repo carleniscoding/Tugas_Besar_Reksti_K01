@@ -10,6 +10,20 @@ export function getElectionById(id: string) {
   });
 }
 
+export async function ensureElectionParticipant(userId: string, electionId: string) {
+  const participant = await prisma.electionParticipant.findUnique({
+    where: { electionId_userId: { userId, electionId: BigInt(electionId) } },
+    select: { id: true },
+  });
+  return Boolean(participant);
+}
+
+export async function getElectionByIdForUser(id: string, userId: string) {
+  const participant = await ensureElectionParticipant(userId, id);
+  if (!participant) return null;
+  return getElectionById(id);
+}
+
 export function getAllElections(includeDeleted = false) {
   return prisma.election.findMany({
     where: includeDeleted ? {} : { deletedAt: null },
@@ -23,16 +37,10 @@ export function getAllElections(includeDeleted = false) {
 }
 
 export async function getElectionsForUser(userId: string) {
-  const user = await prisma.user.findUnique({ where: { id: userId }, include: { penduduk: true } });
-  if (!user?.penduduk) throw new Error("User or citizen data not found");
   return prisma.election.findMany({
     where: {
       deletedAt: null,
-      OR: [
-        { level: "NASIONAL" },
-        { level: "PROVINSI", province: user.penduduk.provinsi },
-        { level: "KOTA", city: user.penduduk.kabKota, province: user.penduduk.provinsi },
-      ],
+      participants: { some: { userId } },
     },
     include: { candidates: { orderBy: { orderIndex: "asc" } } },
     orderBy: { startTime: "desc" },

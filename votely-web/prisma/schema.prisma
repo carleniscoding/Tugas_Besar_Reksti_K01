@@ -39,6 +39,7 @@ model User {
   penduduk            Penduduk   @relation(fields: [pendudukId], references: [id], onDelete: Cascade)
   auditLogs           AuditLog[]
   createdElections    Election[] @relation("CreatedByAdmin")
+  electionParticipants ElectionParticipant[]
   votes               Vote[]
   voteTokens          VoteToken[]
 }
@@ -60,6 +61,7 @@ model Election {
   deletedAt          DateTime?            @map("deleted_at") @db.Timestamptz(6)
   candidates         Candidate[]
   electionStatsCache ElectionStatsCache[]
+  participants       ElectionParticipant[]
   creator            User                 @relation("CreatedByAdmin", fields: [createdBy], references: [id])
   votes              Vote[]
   voteTokens          VoteToken[]
@@ -69,6 +71,19 @@ model Election {
   @@index([endTime])
   @@index([deletedAt])
   @@map("elections")
+}
+
+model ElectionParticipant {
+  id         String   @id @default(cuid())
+  electionId BigInt   @map("election_id")
+  userId     String   @map("user_id")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  election   Election @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([electionId, userId])
+  @@index([userId])
+  @@map("election_participants")
 }
 
 model Candidate {

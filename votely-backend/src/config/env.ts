@@ -11,6 +11,7 @@ export const env = {
   jwtSecret: process.env.JWT_SECRET || "fallback-secret",
   encryptionKey: process.env.ENCRYPTION_KEY || "",
   pythonApiUrl: process.env.PYTHON_API_URL || process.env.FACE_RECOGNITION_API_URL || "http://127.0.0.1:5000",
+  faceBypassEnabled: process.env.FACE_BYPASS_ENABLED === "true",
   thirdwebClientId: process.env.NEXT_PUBLIC_THIRDWEB_CLIENT_ID || "",
   contractAddress: process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || "",
   adminPrivateKey: process.env.PRIVATE_KEY || "",

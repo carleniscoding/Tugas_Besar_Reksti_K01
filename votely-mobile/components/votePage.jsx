@@ -71,6 +71,28 @@ function VotePage() {
     }
   }
 
+  const handleVerifyClick = async () => {
+    setVerifying(true)
+    setError('')
+    try {
+      const response = await verifyFace(undefined, { electionId })
+      if (!response?.verified || !response?.voteToken) {
+        throw new Error(response?.message || 'Verifikasi wajah gagal')
+      }
+      setVoteToken(response.voteToken)
+      setShowFace(false)
+    } catch (err) {
+      const message = err.message || 'Verifikasi wajah gagal'
+      if (message.toLowerCase().includes('image data') || message.toLowerCase().includes('foto wajah')) {
+        setShowFace(true)
+      } else {
+        setError(message)
+      }
+    } finally {
+      setVerifying(false)
+    }
+  }
+
   const handleSubmitVote = async () => {
     if (!selectedCandidate) {
       setError('Pilih kandidat terlebih dahulu.')
@@ -155,9 +177,10 @@ function VotePage() {
                 ) : (
                   <button
                     className='btn-primary w-full rounded-xl py-3 text-sm font-semibold'
-                    onClick={() => setShowFace(true)}
+                    onClick={handleVerifyClick}
+                    disabled={verifying}
                   >
-                    Verifikasi Wajah
+                    {verifying ? 'Memverifikasi...' : 'Verifikasi Wajah'}
                   </button>
                 )}
               </div>

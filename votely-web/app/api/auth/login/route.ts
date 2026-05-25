@@ -17,6 +17,13 @@ export async function POST(request: Request) {
 
         const result = await loginVoterAccount(nik, password);
 
+        if (result.user.role !== "ADMIN") {
+            return NextResponse.json(
+                { error: "Akun pemilih hanya dapat digunakan di aplikasi mobile." },
+                { status: 403 }
+            );
+        }
+
         const cookieStore = await cookies(); // Next.js 15 pakai await, versi 14 tanpa await
 
         cookieStore.set("token", result.token, {

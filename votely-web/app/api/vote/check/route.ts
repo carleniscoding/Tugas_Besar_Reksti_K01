@@ -31,6 +31,13 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    if (user.role === 'ADMIN') {
+      return NextResponse.json(
+        { success: false, error: 'Administrator tidak memiliki status voting.' },
+        { status: 403 }
+      );
+    }
+
     console.log('[VoteCheck] Checking vote for user:', user.id);
 
     const { searchParams } = new URL(request.url);

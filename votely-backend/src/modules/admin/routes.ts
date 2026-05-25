@@ -1,12 +1,15 @@
 import { Router } from "express";
+import multer from "multer";
 import { prisma } from "../../shared/prisma.js";
 import { asyncHandler, HttpError } from "../../shared/http.js";
 import { electionStatus, serializeBigInt } from "../../shared/serializers.js";
 import { requireAdmin, type AuthenticatedRequest } from "../auth/middleware.js";
 import { createChainElection, addChainCandidate } from "../blockchain/service.js";
 import { getAllElections, getElectionById, getVoteCounts } from "../elections/service.js";
+import { importElectionParticipants, importElectionParticipantsCsv, parseVoterCsv } from "./voterCsv.js";
 
 export const adminRouter = Router();
+const csvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 } });
 
 function parseCsv(text: string) {
   const lines = text.trim().split(/\r?\n/).filter(Boolean);
@@ -58,7 +61,11 @@ adminRouter.post("/elections/create-and-deploy", requireAdmin, asyncHandler(asyn
   const start = new Date(req.body.startTime || req.body.startDate);
   const end = new Date(req.body.endTime || req.body.endDate);
   const candidates = Array.isArray(req.body.candidates) ? req.body.candidates : [];
+  const voterImport = typeof req.body.voterCsv === "string" && req.body.voterCsv.trim()
+    ? parseVoterCsv(req.body.voterCsv)
+    : null;
   if (!name || !req.body.description || !req.body.level || !start || !end) throw new HttpError(400, "Missing required fields");
+  if (voterImport && voterImport.valid.length === 0) throw new HttpError(400, "Spreadsheet pemilih tidak memiliki data valid.", { voterImport });
 
   const deployed = await createChainElection({ name, description: req.body.description, startTime: start, endTime: end });
   const candidateChainIds = new Map<number, bigint>();
@@ -73,36 +80,41 @@ adminRouter.post("/elections/create-and-deploy", requireAdmin, asyncHandler(asyn
     candidateChainIds.set(i, result.chainCandidateId);
   }
 
-  const election = await prisma.election.create({
-    data: {
-      name,
-      description: req.body.description,
-      level: req.body.level,
-      city: req.body.city || null,
-      province: req.body.province || null,
-      startTime: start,
-      endTime: end,
-      createdBy: req.user!.id,
-      chainElectionId: deployed.chainElectionId,
-      candidates: {
-        create: candidates.map((candidate: any, index: number) => ({
-          name: candidate.name,
-          party: candidate.party,
-          description: candidate.description || null,
-          photoUrl: candidate.photoUrl || null,
-          orderIndex: index,
-          chainCandidateId: candidateChainIds.get(index) || null,
-        })),
+  const result = await prisma.$transaction(async (tx) => {
+    const election = await tx.election.create({
+      data: {
+        name,
+        description: req.body.description,
+        level: req.body.level,
+        city: req.body.city || null,
+        province: req.body.province || null,
+        startTime: start,
+        endTime: end,
+        createdBy: req.user!.id,
+        chainElectionId: deployed.chainElectionId,
+        candidates: {
+          create: candidates.map((candidate: any, index: number) => ({
+            name: candidate.name,
+            party: candidate.party,
+            description: candidate.description || null,
+            photoUrl: candidate.photoUrl || null,
+            orderIndex: index,
+            chainCandidateId: candidateChainIds.get(index) || null,
+          })),
+        },
       },
-    },
-    include: { candidates: true },
+      include: { candidates: true },
+    });
+    const voterImportSummary = voterImport ? await importElectionParticipants(tx, election.id, voterImport) : null;
+    return { election, voterImportSummary };
   });
 
   res.json({
     success: true,
-    data: serializeBigInt(election),
+    data: serializeBigInt(result.election),
     message: "Election created and deployed successfully!",
     blockchain: serializeBigInt({ transactionHash: deployed.transactionHash, chainElectionId: deployed.chainElectionId, candidatesDeployed: candidates.length }),
+    voterImport: result.voterImportSummary,
   });
 }));
 
@@ -216,48 +228,19 @@ adminRouter.get("/reports/elections/:electionId", requireAdmin, asyncHandler(asy
   res.json({ success: true, data: serializeBigInt({ election, votes, auditLogs }) });
 }));
 
-adminRouter.post("/voters/import", requireAdmin, asyncHandler(async (req, res) => {
-  const csv = typeof req.body === "string" ? req.body : req.body.csv;
+adminRouter.post("/voters/import", requireAdmin, csvUpload.single("file"), asyncHandler(async (req: AuthenticatedRequest, res) => {
+  const csv = req.file?.buffer.toString("utf8") || (typeof req.body === "string" ? req.body : req.body.csv);
+  const electionId = String(req.body?.electionId || "");
+  if (!electionId) throw new HttpError(400, "Election ID wajib diisi.");
   if (!csv) throw new HttpError(400, "CSV content is required in the `csv` field.");
-  const rows = parseCsv(csv);
-  const seen = new Set<string>();
-  const duplicates: string[] = [];
-  const imported: string[] = [];
-  const invalid: Array<{ row: number; reason: string }> = [];
 
-  for (const [index, row] of rows.entries()) {
-    const nik = row.nik || row.NIK;
-    if (!nik || !row.namaLengkap || !row.tanggalLahir) {
-      invalid.push({ row: index + 2, reason: "Missing nik, namaLengkap, or tanggalLahir" });
-      continue;
-    }
-    if (seen.has(nik)) {
-      duplicates.push(nik);
-      continue;
-    }
-    seen.add(nik);
-    await prisma.penduduk.upsert({
-      where: { nik },
-      update: {
-        namaLengkap: row.namaLengkap,
-        tanggalLahir: new Date(row.tanggalLahir),
-        provinsi: row.provinsi || null,
-        kabKota: row.kabKota || null,
-        kecamatan: row.kecamatan || null,
-        kelurahan: row.kelurahan || null,
-      },
-      create: {
-        nik,
-        namaLengkap: row.namaLengkap,
-        tanggalLahir: new Date(row.tanggalLahir),
-        provinsi: row.provinsi || null,
-        kabKota: row.kabKota || null,
-        kecamatan: row.kecamatan || null,
-        kelurahan: row.kelurahan || null,
-      },
-    });
-    imported.push(nik);
+  const election = await prisma.election.findUnique({ where: { id: BigInt(electionId) }, select: { id: true, deletedAt: true } });
+  if (!election || election.deletedAt) throw new HttpError(404, "Election tidak ditemukan.");
+
+  const data = await importElectionParticipantsCsv(electionId, csv, req.user!.id);
+  if (data.imported === 0) {
+    res.status(400).json({ success: false, error: "Tidak ada peserta valid untuk diimport.", data });
+    return;
   }
-
-  res.json({ success: true, data: { imported: imported.length, duplicates, invalid } });
+  res.json({ success: true, data, message: "Import peserta berhasil." });
 }));

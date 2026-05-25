@@ -3,13 +3,12 @@ import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 
 const routeRoles = {
-  "/admin": ["ADMIN"],           
-  "/elections": ["WARGA", "ADMIN"],          
-  "/dashboard": ["WARGA", "ADMIN"],  // Admin juga bisa akses dashboard
-  "/user": ["WARGA", "ADMIN"]  // Semua user bisa akses profil
+  "/admin": ["ADMIN"],
+  "/user": ["ADMIN"]
 };
 
-const authRoutes = ["/auth/login", "/auth/register"];
+const authRoutes = ["/auth/login"];
+const voterOnlyMobileRoutes = ["/dashboard", "/elections", "/auth/register"];
 const publicRoutes = ["/", "/api/auth"];
 
 export async function proxy(request: NextRequest) {
@@ -21,6 +20,22 @@ export async function proxy(request: NextRequest) {
     process.env.JWT_SECRET || "fallback-secret"
   );
 
+  if (voterOnlyMobileRoutes.some((route) => pathname.startsWith(route))) {
+    if (token) {
+      try {
+        const { payload } = await jwtVerify(token, secret);
+        if (payload.role === "ADMIN") {
+          return NextResponse.redirect(new URL("/admin", request.url));
+        }
+      } catch (error) {
+        // fall through to login and clear stale token
+      }
+    }
+
+    const response = NextResponse.redirect(new URL("/auth/login", request.url));
+    response.cookies.delete("token");
+    return response;
+  }
 
   if (authRoutes.includes(pathname)) {
     if (token) {
@@ -30,7 +45,9 @@ export async function proxy(request: NextRequest) {
         if (payload.role === "ADMIN") {
           return NextResponse.redirect(new URL("/admin", request.url));
         }
-        return NextResponse.redirect(new URL("/dashboard", request.url));
+        const response = NextResponse.next();
+        response.cookies.delete("token");
+        return response;
         
       } catch (error) {
         return NextResponse.next();
@@ -60,7 +77,9 @@ export async function proxy(request: NextRequest) {
         if (userRole === "ADMIN") {
           return NextResponse.redirect(new URL("/admin", request.url));
         }
-        return NextResponse.redirect(new URL("/dashboard", request.url)); 
+        const response = NextResponse.redirect(new URL("/auth/login", request.url));
+        response.cookies.delete("token");
+        return response;
       }
 
       return NextResponse.next();
